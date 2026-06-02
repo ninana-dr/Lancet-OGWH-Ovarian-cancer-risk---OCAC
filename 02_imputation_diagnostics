@@ -1,0 +1,37 @@
+# 02_imputation_diagnostics.R
+
+library(mice)
+
+imp <- readRDS("mice_imputation_object.rds")
+
+# Trace plots
+
+plot(
+imp,
+c(
+"bmirecent",
+"parity_r",
+"breastfed",
+"menarcheage"
+)
+)
+
+# Density plots
+
+densityplot(
+imp,
+~ bmirecent
+)
+
+# Strip plots
+
+stripplot(
+imp,
+bmirecent ~ .imp,
+pch = 20,
+cex = 0.5
+)
+
+# Missing data pattern
+
+md.pattern(complete(imp, 0))

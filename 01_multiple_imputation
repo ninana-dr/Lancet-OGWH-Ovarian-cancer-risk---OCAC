@@ -1,0 +1,179 @@
+# Notes:
+# - 'imp' stores full imputation process and diagnostics
+# - 'imputed_dataset_long.csv' is for analysis/export only
+
+#--------------------------------------------------
+# Multiple Imputation using MICE
+#--------------------------------------------------
+
+# Load packages
+library(mice)
+library(dplyr)
+library(haven)   # read SAS data
+library(lme4)    # mixed models
+library(broom.mixed)
+#--------------------------------------------------
+# Read data
+#--------------------------------------------------
+
+# Replace with path to your SAS dataset
+dat <- read_sas("analysis_dataset.sas7bdat")
+
+#--------------------------------------------------
+# Define variables
+#--------------------------------------------------
+
+vars <- c(
+  "ID",
+  "dxage",
+  "race",
+  "ocever",
+  "ocmos",
+  "height",
+  "menarchage",
+  "lastpregage",
+  "breastfed",
+  "menstat",
+  "tublig",
+  "tubligage",
+  "endom",
+  "endomage",
+  "site",
+  "histologygroup",
+  "casecon",
+  "parity_r",
+  "edu_r",
+  "bmirecent",
+  "weightrecent",
+  "ovfam",
+  "brfam"
+)
+
+dat_imp <- dat[, vars]
+
+#--------------------------------------------------
+# Set variable types 
+#--------------------------------------------------
+
+dat_imp <- dat_imp %>%
+  mutate(
+    # categorical / binary variables
+    ID = as.factor(ID),
+    race = as.factor(race),
+    ocever = as.factor(ocever),
+    breastfed = as.factor(breastfed),
+    menstat = as.factor(menstat),
+    tublig = as.factor(tublig),
+    endom = as.factor(endom),
+    site = as.factor(site),
+    histologygroup = as.factor(histologygroup),
+    casecon = as.factor(casecon),
+    edu_r = as.factor(edu_r),
+    ovfam = as.factor(ovfam),
+    brfam = as.factor(brfam)
+
+    # continuous:
+    # dxage, ocmos, height, menarchage, lastpregage,
+    # tubligage, endomage, bmirecent, weightrecent, parity_r
+  )
+
+#--------------------------------------------------
+# Specify imputation methods
+#--------------------------------------------------
+
+meth <- make.method(dat_imp)
+
+# Continuous → pmm
+meth[c(
+  "dxage", "ocmos", "height", "menarchage",
+  "lastpregage", "tubligage", "endomage",
+  "bmirecent", "weightrecent", "parity_r"
+)] <- "pmm"
+
+# Binary → logreg
+meth[c(
+  "ocever", "breastfed", "tublig",
+  "endom", "ovfam", "brfam"
+)] <- "logreg"
+
+# Categorical → polyreg
+meth[c(
+  "race", "menstat", "edu_r"
+)] <- "polyreg"
+
+# these variables have complete data
+meth[c("ID", "casecon", "histologygroup", "site")] <- ""
+
+#--------------------------------------------------
+# Predictor matrix
+#--------------------------------------------------
+
+pred <- make.predictorMatrix(dat_imp)
+
+# Do not use ID at all
+pred["ID", ] <- 0
+pred[, "ID"] <- 0
+
+# 
+pred[c("casecon", "histologygroup", "site"), ] <- 0
+
+# Ensure they are used as predictors
+pred[, c("casecon", "histologygroup", "site")] <- 1
+
+#--------------------------------------------------
+# Run MICE
+#--------------------------------------------------
+
+set.seed(12345)
+
+imp <- mice(
+  dat_imp,
+  m = 20,
+  maxit = 20,
+  method = meth,
+  predictorMatrix = pred,
+  seed = 12345,
+  printFlag = TRUE
+)
+
+#--------------------------------------------------
+# Save imputation object
+#--------------------------------------------------
+
+saveRDS(imp, "mice_imputation_object.rds")
+
+#--------------------------------------------------
+# Create long-format dataset
+#--------------------------------------------------
+
+long_dat <- complete(
+  imp,
+  action = "long",
+  include = TRUE
+)
+
+miceadds::save.data(long_dat, filename="micelong", type="Rdata")
+
+#--------------------------------------------------
+# Example pooled analysis
+# Mixed-effects logistic regression
+#--------------------------------------------------
+
+fit <- with(
+  imp,
+  glmer(
+    casecon ~ dxage + bmirecent + parity_r + ocever + (1 | site),
+    family = binomial(link="logit"),
+    control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun=100000))
+  )
+)
+
+pooled <- pool(fit)
+
+summary(pooled)
+
+#save the output as a table
+outputtable<-tidy(pooled, conf.int=TRUE, exponentiate=TRUE, effects="fixed")
+
+#export to csv
+write.csv(outputtable, "outputtable.csv", row.names = FALSE)

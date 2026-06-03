@@ -111,14 +111,24 @@ meth[c("ID", "casecon", "histologygroup", "site")] <- ""
 pred <- make.predictorMatrix(dat_imp)
 
 # Do not use ID at all
-pred["ID", ] <- 0
-pred[, "ID"] <- 0
+Pred["ID", ] <- 0
+Pred[, "ID"] <- 0
 
-# 
-pred[c("casecon", "histologygroup", "site"), ] <- 0
+# Do not impute these 
+Pred[c("site",  "casecon1", "histogroup"), ] <- 0
 
-# Ensure they are used as predictors
-pred[, c("casecon", "histologygroup", "site")] <- 1
+# Use selected ones as predictors - 
+Pred[, "site"] <- 1
+Pred[, "histogroup"] <- 1
+
+# Do NOT use these as predictors
+Pred[, "casecon1"] <- 0
+Pred[, "ID"] <- 0
+# Check outcome is used as predictor
+Pred[, "histogroup"]
+
+# Check it's NOT imputed
+Pred["histogroup", ]
 
 #--------------------------------------------------
 # Run MICE
